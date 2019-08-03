@@ -1,0 +1,10 @@
+{
+  "name": "Zappy.zap",
+  "voltage": "19.0:v",
+  "duration": "8.0:ms",
+  "option": {
+    "row": "1",
+    "col": "1",
+    "max_current": "100.0:amp"
+  }
+}
