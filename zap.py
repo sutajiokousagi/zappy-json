@@ -245,10 +245,9 @@ class ZappyJSON():
                 out_name = self.prefix + 'r' + str(r) + 'c' + str(c) + '.csv'
                 slowg = []
                 fastg = []
-                #slowg.append(0)   # to include the origin on the plot
-                #fastg.append(0)
                 with open(out_name, "w") as outf:
-                    print("warning: using hard-coded calibration parameters from zappy-01")
+                    print("warning: using hard-coded calibration parameters from zappy-01", file=outf)
+                    print("row, " + str(r) + ", col, " + str(c) + ", target V, " + str(v), file=outf)
                     print("slow, fast", file=outf)
                     for i in range(len(slow)):
                         slowv = (slow[i] * (P5V_ADC / 4096) - P5V_ADC / 8192) * SLOW_M + SLOW_B
