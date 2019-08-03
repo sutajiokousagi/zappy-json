@@ -4,17 +4,19 @@ import json
 import argparse
 import socket
 import telnetlib
-
+import matplotlib.pyplot as plt
 
 #test_parsed = json.loads(test)
 #test_voltage = test_parsed["voltage"].split(':')
 
 class ZappyJSON():
-    def __init__(self, json_string, target_ip="10.0.11.2", dry_run=False, verbose=False):
+    def __init__(self, json_string, target_ip="10.0.11.2", dry_run=False, verbose=False, prefix=None, no_png=False):
         self.json_string = json_string
         self.target_ip = target_ip
         self.dry_run = dry_run
         self.verbose = verbose
+        self.prefix = prefix
+        self.no_png = no_png
 
     def zap(self):
         try:
@@ -40,9 +42,11 @@ class ZappyJSON():
                     print('Duration units are not recognized')
                     exit(1)
                 time = float(duration[0])
-                if time > 16.3 or time < 0.0:
+                if time > 15.3 or time < 0.0:
                     print('Duration ' + 'ms out of range')
                     exit(1)
+                else:
+                    time = time + 1.0  # there is a 1.0ms "pre-amble" in the dataset
 
                 # set to invalid negatives so we can detect if any defaults are overriden
                 row = -1
@@ -75,7 +79,7 @@ class ZappyJSON():
                             exit(1)
 
                 if row == -1:
-                    print("Warning: no row specified, defazeulting to all rows")
+                    print("Warning: no row specified, defaulting to all rows")
                     row = 4
                 if col == -1:
                     print("Warning: no col specified, defaulting to all columns")
@@ -110,6 +114,7 @@ class ZappyJSON():
 
                     if ret[2].decode('utf-8').find('zpass') != -1:
                         tn.close()
+                        self.dump_csv(row+1, col+1, v, time)
                         exit(0)
                     else:
                         print('Chassis returned error')
@@ -198,6 +203,84 @@ class ZappyJSON():
             print("No 'name' field in JSON record, aborting")
             exit(1)
 
+    # row and col are 1-based numbering
+    def dump_csv(self, row, col, v, time):
+        if self.prefix is None:
+            return
+
+        in_prefix = '/opt/zappy/zappy-log.'
+        if row == 5:
+            rstart = 1
+            rstop = 5
+        else:
+            rstart = row
+            rstop = row+1
+
+        if col == 13:
+            cstart = 1
+            cstop = 13
+        else:
+            cstart = col
+            cstop = col+1
+
+        slow = []
+        fast = []
+
+        # hard coded calibration parameters from zappy-01 for now
+        FAST_M=215.7720466
+        FAST_B=-0.0488699
+        SLOW_M=229.9235716
+        SLOW_B=-0.008779325
+        P5V_ADC=5.009
+        for r in range(rstart, rstop):
+            for c in range(cstart, cstop):
+                with open(in_prefix + 'r' + str(r) + 'c' + str(c), "rb") as f:
+                    s = f.read(2)
+                    while s:
+                        slow.append(int.from_bytes(s, byteorder='little'))
+                        s = f.read(2)
+                        fast.append(int.from_bytes(s, byteorder='little'))
+                        s = f.read(2)
+
+                out_name = self.prefix + 'r' + str(r) + 'c' + str(c) + '.csv'
+                slowg = []
+                fastg = []
+                #slowg.append(0)   # to include the origin on the plot
+                #fastg.append(0)
+                with open(out_name, "w") as outf:
+                    print("warning: using hard-coded calibration parameters from zappy-01")
+                    print("slow, fast", file=outf)
+                    for i in range(len(slow)):
+                        slowv = (slow[i] * (P5V_ADC / 4096) - P5V_ADC / 8192) * SLOW_M + SLOW_B
+                        slowg.append(slowv)
+                        fastv = (fast[i] * (P5V_ADC / 4096) - P5V_ADC / 8192) * FAST_M + FAST_B
+                        fastg.append(fastv)
+                        print(str(slowv) + ', ' + str(fastv), file=outf)
+                    outf.close()
+
+                if self.no_png == False:
+                    t = range(len(slowg))
+                    axismax = max(slowg)
+                    if( axismax < max(fastg)):
+                        axismax = max(fastg)
+                    plt.plot(t, fastg, 'b', label='on cell', alpha=0.5)
+                    plt.plot(t, slowg, 'r', label='at cap', alpha=0.5)
+                    plt.ylim(0, axismax)
+                    plt.title('Zappy: row ' + str(r) + ' / col ' + str(c) + '/ target ' + str(v) + 'V / duration ' + str(time - 1.0) + 'ms + 1.0ms preamble/ ' + 'calparams: zappy-01', fontsize=8)
+                    plt.xlabel('time us')
+                    plt.ylabel('volts V')
+                    plt.legend(loc='lower right')
+                    out_png = self.prefix + 'r' + str(r) + 'c' + str(c) + '.png'
+                    plt.savefig(out_png, dpi=300)
+                    plt.clf()
+
+                slow = []
+                fast = []
+                f.close()
+
+
+
+
 
 def main():
     parser = argparse.ArgumentParser(description="Zappy JSON command line interface")
@@ -213,8 +296,15 @@ def main():
     parser.add_argument(
         "-v", "--verbose", help="Print debugging spew", dest='verbose', action='store_true'
     )
+    parser.add_argument(
+        "-p", "--prefix", help="Output file prefix for saving CSV and PNG"
+    )
+    parser.add_argument(
+        "-n", "--no-png", help="Don't save PNG graph when output prefix is specified to speedup data post-processing", dest='no_png', action='store_true'
+    )
     parser.set_defaults(dry_run=False)
     parser.set_defaults(verbose=False)
+    parser.set_defaults(no_png=False)
     args = parser.parse_args()
 
     try:
@@ -234,7 +324,7 @@ def main():
 
     with f:
         json_string = f.read()
-        zappy = ZappyJSON(json_string, target_ip, args.dry_run, args.verbose)
+        zappy = ZappyJSON(json_string, target_ip, args.dry_run, args.verbose, args.prefix, args.no_png)
         zappy.zap()
         exit(0)
 
