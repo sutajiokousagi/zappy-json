@@ -75,11 +75,11 @@ class ZappyJSON():
                             exit(1)
 
                 if row == -1:
-                    print("Warning: no row specified, using default of 1")
-                    row = 1
+                    print("Warning: no row specified, defazeulting to all rows")
+                    row = 4
                 if col == -1:
-                    print("Warning: no col specified, using default of 1")
-                    col = 1
+                    print("Warning: no col specified, defaulting to all columns")
+                    col = 12
                 if max_current == -1.0:
                     # no warning emitted because this is not really a common parameter to specify
                     max_current = 100.0  # just specify a big number, should always be less than this
@@ -96,10 +96,26 @@ class ZappyJSON():
                         print('telnet> ' + zapstr)
                     zapbytes = bytearray(zapstr,'utf-8')
                     tn.write(bytes(zapbytes))
-                    retstr = str(tn.read_until(bytearray('data', 'utf-8'), timeout=2))
-                    if self.verbose:
-                        print(retstr)
-                    tn.close()
+
+                    try:
+                        ret = tn.expect(["zerr", "zpass"], timeout=10)
+                        # this requires editing telnetlib.py expect function: dm = list[i].search(self.cookedq.decode('utf-8'))
+                    except EOFError:
+                        print('Zappy.zap failed: no status return')
+                    if ret[0] == -1:
+                        print('Zappy.zap failed: status return timeout')
+
+                    if self.verbose and ret[0] != -1:
+                        print('DEBUG: ' + ret[2].decode('utf-8'))
+
+                    if ret[2].decode('utf-8').find('zpass') != -1:
+                        tn.close()
+                        exit(0)
+                    else:
+                        print('Chassis returned error')
+                        print(ret[2].decode('utf-8'))
+                        tn.close()
+                        exit(1)
 
                 except Exception as e:
                     print(e)
@@ -128,7 +144,7 @@ class ZappyJSON():
                         if self.verbose and ret[0] != -1:
                             print('DEBUG: ' + ret[2].decode('utf-8'))
 
-                        if ret[2].decode('utf-8').find('zpass'):
+                        if ret[2].decode('utf-8').find('zpass') != -1:
                             tn.close()
                             exit(0)
                         else:
@@ -163,7 +179,7 @@ class ZappyJSON():
                         if self.verbose and ret[0] != -1:
                             print('DEBUG: ' + ret[2].decode('utf-8'))
 
-                        if ret[2].decode('utf-8').find('zpass'):
+                        if ret[2].decode('utf-8').find('zpass') != -1:
                             tn.close()
                             exit(0)
                         else:

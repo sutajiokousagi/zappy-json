@@ -1,0 +1,8 @@
+{
+  "name": "Zappy.zap",
+  "voltage": "19.0:v",
+  "duration": "6.5:ms",
+  "option": {
+    "row": "1"
+  }
+}
