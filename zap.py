@@ -266,7 +266,7 @@ class ZappyJSON():
                     plt.plot(t, fastg, 'b', label='on cell', alpha=0.5)
                     plt.plot(t, slowg, 'r', label='at cap', alpha=0.5)
                     plt.ylim(0, axismax)
-                    plt.title('Zappy: row ' + str(r) + ' / col ' + str(c) + '/ target ' + str(v) + 'V / duration ' + str(time - 1.0) + 'ms + 1.0ms preamble/ ' + 'calparams: zappy-01', fontsize=8)
+                    plt.title('Zappy: row ' + str(r) + ' / col ' + str(c) + '/ target ' + str(v) + 'V / duration ' + str(time - 1.0) + 'ms + 1.0ms preamble / ' + 'calparams: zappy-01', fontsize=8)
                     plt.xlabel('time us')
                     plt.ylabel('volts V')
                     plt.legend(loc='lower right')
