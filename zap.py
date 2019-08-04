@@ -86,9 +86,6 @@ class ZappyJSON():
                 if col == -1:
                     print("Warning: no col specified, defaulting to all columns")
                     col = 12
-                if max_current == -1.0:
-                    # no warning emitted because this is not really a common parameter to specify
-                    max_current = 100.0  # just specify a big number, should always be less than this
 
                 if self.dry_run or self.verbose:
                     print('Parsing successful: voltage '+ str(v) + ' duration ' + str(time) + ' row ' + str(row+1) + ' col ' + str(col+1) + ' max_current ' + str(max_current) )
@@ -97,7 +94,7 @@ class ZappyJSON():
 
                 try:
                     tn = telnetlib.Telnet(self.target_ip)
-                    zapstr = str('zap ' + str(row) + ' ' + str(col) + ' ' + str(v) + ' ' + str(time * 1000) + '\n\r')
+                    zapstr = str('zap ' + str(row) + ' ' + str(col) + ' ' + str(v) + ' ' + str(time * 1000) + ' ' + str(max_current * 1000) + '\n\r')
                     if self.verbose:
                         print('telnet> ' + zapstr)
                     zapbytes = bytearray(zapstr,'utf-8')
