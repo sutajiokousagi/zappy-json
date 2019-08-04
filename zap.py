@@ -31,7 +31,7 @@ class ZappyJSON():
         try:
             if(command["name"] == 'Zappy.zap'):
                 voltage = command["voltage"].split(':')
-                if voltage[1].lower() != 'v':
+                if voltage[1].lower() != 'volts':
                     print('Voltage units are not recognized')
                     exit(1)
                 v = float(voltage[0])
@@ -40,7 +40,7 @@ class ZappyJSON():
                     exit(1)
 
                 duration = command["duration"].split(':')
-                if duration[1].lower() != 'ms':
+                if duration[1].lower() != 'milliseconds':
                     print('Duration units are not recognized')
                     exit(1)
                 time = float(duration[0])
