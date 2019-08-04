@@ -255,13 +255,13 @@ class ZappyJSON():
                 with open(out_name, "w") as outf:
                     print("warning: using hard-coded calibration parameters from zappy-01", file=outf)
                     print("row, " + str(r) + ", col, " + str(c) + ", target V, " + str(v), file=outf)
-                    print("slow, fast", file=outf)
+                    print("slow V, fast V, slow code, fast code", file=outf)
                     for i in range(len(slow)):
                         slowv = (slow[i] * (P5V_ADC / 4096) - P5V_ADC / 8192) * SLOW_M + SLOW_B
                         slowg.append(slowv)
                         fastv = (fast[i] * (P5V_ADC / 4096) - P5V_ADC / 8192) * FAST_M + FAST_B
                         fastg.append(fastv)
-                        print(str(slowv) + ', ' + str(fastv), file=outf)
+                        print(str(slowv) + ', ' + str(fastv) + ', ' + str(slow[i]) + ', ' + str(fast[i]), file=outf)
                     outf.close()
 
                 if self.no_png == False:
