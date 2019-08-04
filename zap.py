@@ -5,18 +5,20 @@ import argparse
 import socket
 import telnetlib
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 #test_parsed = json.loads(test)
 #test_voltage = test_parsed["voltage"].split(':')
 
 class ZappyJSON():
-    def __init__(self, json_string, target_ip="10.0.11.2", dry_run=False, verbose=False, prefix=None, no_png=False):
+    def __init__(self, json_string, target_ip="10.0.11.2", dry_run=False, verbose=False, prefix=None, no_png=False, serialize=False):
         self.json_string = json_string
         self.target_ip = target_ip
         self.dry_run = dry_run
         self.verbose = verbose
         self.prefix = prefix
         self.no_png = no_png
+        self.serialize = serialize
 
     def zap(self):
         try:
@@ -242,7 +244,12 @@ class ZappyJSON():
                         fast.append(int.from_bytes(s, byteorder='little'))
                         s = f.read(2)
 
-                out_name = self.prefix + 'r' + str(r) + 'c' + str(c) + '.csv'
+                if self.serialize:
+                    now = datetime.now()
+                    out_name = self.prefix + now.strftime("%Y_%b_%d-%H_%M_%S-") + 'r' + str(r) + 'c' + str(c) + '.csv'
+                else:
+                    out_name = self.prefix + 'r' + str(r) + 'c' + str(c) + '.csv'
+
                 slowg = []
                 fastg = []
                 with open(out_name, "w") as outf:
@@ -269,7 +276,10 @@ class ZappyJSON():
                     plt.xlabel('time us')
                     plt.ylabel('volts V')
                     plt.legend(loc='lower right')
-                    out_png = self.prefix + 'r' + str(r) + 'c' + str(c) + '.png'
+                    if self.serialize:
+                        out_png = self.prefix + now.strftime("%Y_%b_%d-%H_%M_%S-") + 'r' + str(r) + 'c' + str(c) + '.png'
+                    else:
+                        out_png = self.prefix + 'r' + str(r) + 'c' + str(c) + '.png'
                     plt.savefig(out_png, dpi=300)
                     plt.clf()
 
@@ -301,9 +311,13 @@ def main():
     parser.add_argument(
         "-n", "--no-png", help="Don't save PNG graph when output prefix is specified to speedup data post-processing", dest='no_png', action='store_true'
     )
+    parser.add_argument(
+        "-s", "--serialize", help="Add timestamps to filename when saving CSV and PNG", dest='serialize', action='store_true'
+    )
     parser.set_defaults(dry_run=False)
     parser.set_defaults(verbose=False)
     parser.set_defaults(no_png=False)
+    parser.set_defaults(serialize=False)
     args = parser.parse_args()
 
     try:
@@ -323,7 +337,7 @@ def main():
 
     with f:
         json_string = f.read()
-        zappy = ZappyJSON(json_string, target_ip, args.dry_run, args.verbose, args.prefix, args.no_png)
+        zappy = ZappyJSON(json_string, target_ip, args.dry_run, args.verbose, args.prefix, args.no_png, args.serialize)
         zappy.zap()
         exit(0)
 
