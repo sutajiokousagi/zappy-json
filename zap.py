@@ -53,7 +53,7 @@ class ZappyJSON():
                 # set to invalid negatives so we can detect if any defaults are overriden
                 row = -1
                 col = -1
-                max_current = -1.0
+                max_current = 16.0  # this is the max safe operating current of the transistors
 
                 if 'option' in command:
                     options = command["option"]
@@ -72,7 +72,7 @@ class ZappyJSON():
                         col = col - 1 # actual col is zero-offset for zappy
                     if 'max_current' in options:
                         maxc = options["max_current"].split(':')
-                        if maxc[1].lower() != 'amp':
+                        if maxc[1].lower() != 'amp' and maxc[1].lower() != 'amps':
                             print("Units not recognized for max_current")
                             exit(1)
                         max_current = float(maxc[0])
