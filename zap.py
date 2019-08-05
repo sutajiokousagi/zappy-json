@@ -226,8 +226,8 @@ class ZappyJSON():
         fast = []
 
         # hard coded calibration parameters from zappy-01 for now
-        FAST_M=215.7720466
-        FAST_B=-0.0488699
+        FAST_M=231.4153581 #215.7720466
+        FAST_B=-0.062589035 #-0.0488699
         SLOW_M=229.9235716
         SLOW_B=-0.008779325
         P5V_ADC=5.009
