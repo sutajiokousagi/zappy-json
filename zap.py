@@ -9,6 +9,8 @@ from datetime import datetime
 
 #test_parsed = json.loads(test)
 #test_voltage = test_parsed["voltage"].split(':')
+ENERGY_COEFF = 1.691356e-9
+ONEJOULE = 591241583.67
 
 class ZappyJSON():
     def __init__(self, json_string, target_ip="10.0.11.2", dry_run=False, verbose=False, prefix=None, no_png=False, serialize=False):
@@ -54,6 +56,7 @@ class ZappyJSON():
                 row = -1
                 col = -1
                 max_current = 16.0  # this is the max safe operating current of the transistors
+                energy_cutoff = 0   # 0 means don't use energy cutoff
 
                 if 'option' in command:
                     options = command["option"]
@@ -79,6 +82,18 @@ class ZappyJSON():
                         if max_current < 0.0:
                             print("Max current out of range")
                             exit(1)
+                    if 'energy_cutoff' in options:
+                        ecut = options["energy_cutoff"].split(':')
+                        if ecut[1].lower() != 'joules' and ecut[1].lower() != 'joule':
+                            print("Units not recognized for energy_cutoff")
+                            exit(1)
+                        energy_cutoff_joules = float(ecut[0])
+                        energy_cutoff = int(energy_cutoff_joules * ONEJOULE)
+                        if energy_cutoff > 4294967295:
+                            print("Energy cutoff 32-bit integer overflow")
+                            exit(1)
+                        if self.verbose:
+                            print("Setting cutoff of " + str(energy_cutoff) + " counts")
 
                 if row == -1:
                     print("Warning: no row specified, defaulting to all rows")
@@ -88,13 +103,13 @@ class ZappyJSON():
                     col = 12
 
                 if self.dry_run or self.verbose:
-                    print('Parsing successful: voltage '+ str(v) + ' duration ' + str(time) + ' row ' + str(row+1) + ' col ' + str(col+1) + ' max_current ' + str(max_current) )
+                    print('Parsing successful: voltage '+ str(v) + ' duration ' + str(time) + ' row ' + str(row+1) + ' col ' + str(col+1) + ' max_current ' + str(max_current) + ' energy_cutoff ' + str(energy_cutoff) )
                     if self.dry_run:
                         exit(1)
 
                 try:
                     tn = telnetlib.Telnet(self.target_ip)
-                    zapstr = str('zap ' + str(row) + ' ' + str(col) + ' ' + str(v) + ' ' + str(time * 1000) + ' ' + str(max_current * 1000) + '\n\r')
+                    zapstr = str('zap ' + str(row) + ' ' + str(col) + ' ' + str(v) + ' ' + str(time * 1000) + ' ' + str(max_current * 1000) + ' ' + str(energy_cutoff) + '\n\r')
                     if self.verbose:
                         print('telnet> ' + zapstr)
                     zapbytes = bytearray(zapstr,'utf-8')
@@ -174,7 +189,7 @@ class ZappyJSON():
                         tn.write(bytes(zapbytes))
                         try:
                             ret = tn.expect(["zerr", "zpass"], timeout=10)
-                            # this requires editing telnetlib.py expect function: dm = list[i].search(self.cookedq.decode('utf-8'))
+                            # this requires editing telnetlib.py expect function (line 620): m = list[i].search(self.cookedq.decode('utf-8'))
                         except EOFError:
                             print('Zappy.lock failed: no status return')
                         if ret[0] == -1:
@@ -202,12 +217,31 @@ class ZappyJSON():
             print("No 'name' field in JSON record, aborting")
             exit(1)
 
+    def hex_to_signed(self, source):
+        """Convert a string hex value to a signed hexadecimal value.
+
+        This assumes that source is the proper length, and the sign bit
+        is the first bit in the first byte of the correct length.
+
+        hex_to_signed("F") should return -1.
+        hex_to_signed("0F") should return 15.
+        """
+        if not isinstance(source, str):
+            raise ValueError("string type required")
+        if 0 == len(source):
+            raise valueError("string is empty")
+        sign_bit_mask = 1 << (len(source) * 4 - 1)
+        other_bits_mask = sign_bit_mask - 1
+        value = int(source, 16)
+        return -(value & sign_bit_mask) | (value & other_bits_mask)
+
     # row and col are 1-based numbering
     def dump_csv(self, row, col, v, time):
         if self.prefix is None:
             return
 
         in_prefix = '/opt/zappy/zappy-log.'
+        energy_prefix = '/opt/zappy/zappy-energy.'
         if row == 5:
             rstart = 1
             rstop = 5
@@ -241,6 +275,10 @@ class ZappyJSON():
                         fast.append(int.from_bytes(s, byteorder='little'))
                         s = f.read(2)
 
+                with open(energy_prefix + 'r' + str(r) + 'c' + str(c), "r") as ef:
+                    s = ef.read()
+                    energycode = self.hex_to_signed(s.rstrip())
+
                 if self.serialize:
                     now = datetime.now()
                     out_name = self.prefix + now.strftime("%Y_%b_%d-%H_%M_%S-") + 'r' + str(r) + 'c' + str(c) + '.csv'
@@ -251,6 +289,7 @@ class ZappyJSON():
                 fastg = []
                 with open(out_name, "w") as outf:
                     print("warning: using hard-coded calibration parameters from zappy-01", file=outf)
+                    print("measured energy, " + str(energycode) + ", counts, " + str(energycode * ENERGY_COEFF) + ", joules", file=outf)
                     print("row, " + str(r) + ", col, " + str(c) + ", target V, " + str(v), file=outf)
                     print("slow V, fast V, slow code, fast code", file=outf)
                     for i in range(len(slow)):
@@ -269,7 +308,7 @@ class ZappyJSON():
                     plt.plot(t, fastg, 'b', label='on cell', alpha=0.5)
                     plt.plot(t, slowg, 'r', label='at cap', alpha=0.5)
                     plt.ylim(0, axismax)
-                    plt.title('Zappy: row ' + str(r) + ' / col ' + str(c) + '/ target ' + str(v) + 'V / duration ' + str(time - 1.0) + 'ms + 1.0ms preamble / ' + 'calparams: zappy-01', fontsize=8)
+                    plt.title('Zappy: row ' + str(r) + ' / col ' + str(c) + '/ target ' + str(v) + 'V / duration ' + str(time - 1.0) + 'ms + 1.0ms preamble; ' + '%.3f' % (energycode * ENERGY_COEFF) + 'J / ' + 'calparams: zappy-01', fontsize=8)
                     plt.xlabel('time us')
                     plt.ylabel('volts V')
                     plt.legend(loc='lower right')
