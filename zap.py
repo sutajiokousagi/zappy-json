@@ -6,6 +6,7 @@ import socket
 import telnetlib
 import matplotlib.pyplot as plt
 from datetime import datetime
+import csv
 
 #test_parsed = json.loads(test)
 #test_voltage = test_parsed["voltage"].split(':')
@@ -13,8 +14,7 @@ ENERGY_COEFF = 1.691356e-9
 ONEJOULE = 591241583.67
 
 class ZappyJSON():
-    def __init__(self, json_string, target_ip="10.0.11.2", dry_run=False, verbose=False, prefix=None, no_png=False, serialize=False):
-        self.json_string = json_string
+    def __init__(self, target_ip="10.0.11.2", dry_run=False, verbose=False, prefix=None, no_png=False, serialize=False):
         self.target_ip = target_ip
         self.dry_run = dry_run
         self.verbose = verbose
@@ -22,7 +22,121 @@ class ZappyJSON():
         self.no_png = no_png
         self.serialize = serialize
 
-    def zap(self):
+    def zap_inner(self, command):
+        voltage = command["voltage"].split(':')
+        if voltage[1].lower() != 'volts':
+            print('Voltage units are not recognized')
+            exit(1)
+        v = float(voltage[0])
+        if v > 1000.0 or v < 12.0:  # minimum voltage is 10 for now due to discharge thresholds
+            print('Voltage ' + v + ' out of range')
+            exit(1)
+
+        duration = command["duration"].split(':')
+        if duration[1].lower() != 'milliseconds':
+            print('Duration units are not recognized')
+            exit(1)
+        time = float(duration[0])
+        if time > 15.3 or time < 0.0:
+            print('Duration ' + 'ms out of range')
+            exit(1)
+        else:
+            time = time + 1.0  # there is a 1.0ms "pre-amble" in the dataset
+
+        # set to invalid negatives so we can detect if any defaults are overriden
+        row = -1
+        col = -1
+        max_current = 16.0  # this is the max safe operating current of the transistors
+        energy_cutoff = 0  # 0 means don't use energy cutoff
+
+        if 'option' in command:
+            options = command["option"]
+
+            if 'row' in options:
+                row = int(options["row"])
+                if row < 1 or row > 5:
+                    print("Row " + str(row) + " out of range")
+                    exit(1)
+                row = row - 1  # actual row is zero-offset for zappy
+            if 'col' in options:
+                col = int(options["col"])
+                if col < 1 or col > 13:
+                    print("Col " + str(col) + " out of range")
+                    exit(1)
+                col = col - 1  # actual col is zero-offset for zappy
+            if 'max_current' in options:
+                maxc = options["max_current"].split(':')
+                if maxc[1].lower() != 'amp' and maxc[1].lower() != 'amps':
+                    print("Units not recognized for max_current")
+                    exit(1)
+                max_current = float(maxc[0])
+                if max_current < 0.0:
+                    if self.verbose:
+                        print("Max current is negative - anti-arc is disabled")
+            if 'energy_cutoff' in options:
+                ecut = options["energy_cutoff"].split(':')
+                if ecut[1].lower() != 'joules' and ecut[1].lower() != 'joule':
+                    print("Units not recognized for energy_cutoff")
+                    exit(1)
+                energy_cutoff_joules = float(ecut[0])
+                energy_cutoff = int(energy_cutoff_joules * ONEJOULE)
+                if energy_cutoff > 4294967295:
+                    print("Energy cutoff 32-bit integer overflow")
+                    exit(1)
+                if self.verbose:
+                    print("Setting cutoff of " + str(energy_cutoff) + " counts")
+
+        if row == -1:
+            print("Warning: no row specified, defaulting to all rows")
+            row = 4
+        if col == -1:
+            print("Warning: no col specified, defaulting to all columns")
+            col = 12
+
+        if self.dry_run or self.verbose:
+            print('Parsing successful: voltage ' + str(v) + ' duration ' + str(time) + ' row ' + str(
+                row + 1) + ' col ' + str(col + 1) + ' max_current ' + str(max_current) + ' energy_cutoff ' + str(
+                energy_cutoff))
+            if self.dry_run:
+                return
+
+        try:
+            tn = telnetlib.Telnet(self.target_ip)
+            zapstr = str('zap ' + str(row) + ' ' + str(col) + ' ' + str(v) + ' ' + str(time * 1000) + ' ' + str(
+                max_current * 1000) + ' ' + str(energy_cutoff) + '\n\r')
+            if self.verbose:
+                print('telnet> ' + zapstr)
+            zapbytes = bytearray(zapstr, 'utf-8')
+            tn.write(bytes(zapbytes))
+
+            try:
+                ret = tn.expect(["zerr", "zpass"], timeout=10)
+                # this requires editing telnetlib.py expect function: dm = list[i].search(self.cookedq.decode('utf-8'))
+            except EOFError:
+                print('Zappy.zap failed: no status return')
+            if ret[0] == -1:
+                print('Zappy.zap failed: status return timeout')
+
+            if self.verbose and ret[0] != -1:
+                print('DEBUG: ' + ret[2].decode('utf-8'))
+
+            if ret[2].decode('utf-8').find('zpass') != -1:
+                tn.close()
+                self.dump_csv(row + 1, col + 1, v, time)
+                return
+            else:
+                print('Chassis returned error')
+                print(ret[2].decode('utf-8'))
+                tn.close()
+                exit(1)
+
+        except Exception as e:
+            print(e)
+            print('Error sending command to zappy logic module')
+
+    def zap(self, json_string):
+        self.json_string = json_string
+
         try:
             command = json.loads(self.json_string)
         except Exception as e:
@@ -32,114 +146,7 @@ class ZappyJSON():
 
         try:
             if(command["name"] == 'Zappy.zap'):
-                voltage = command["voltage"].split(':')
-                if voltage[1].lower() != 'volts':
-                    print('Voltage units are not recognized')
-                    exit(1)
-                v = float(voltage[0])
-                if v > 1000.0 or v < 12.0:  # minimum voltage is 10 for now due to discharge thresholds
-                    print('Voltage ' + v + ' out of range')
-                    exit(1)
-
-                duration = command["duration"].split(':')
-                if duration[1].lower() != 'milliseconds':
-                    print('Duration units are not recognized')
-                    exit(1)
-                time = float(duration[0])
-                if time > 15.3 or time < 0.0:
-                    print('Duration ' + 'ms out of range')
-                    exit(1)
-                else:
-                    time = time + 1.0  # there is a 1.0ms "pre-amble" in the dataset
-
-                # set to invalid negatives so we can detect if any defaults are overriden
-                row = -1
-                col = -1
-                max_current = 16.0  # this is the max safe operating current of the transistors
-                energy_cutoff = 0   # 0 means don't use energy cutoff
-
-                if 'option' in command:
-                    options = command["option"]
-
-                    if 'row' in options:
-                        row = int(options["row"])
-                        if row < 1 or row > 5:
-                            print("Row " + str(row) + " out of range")
-                            exit(1)
-                        row = row - 1  # actual row is zero-offset for zappy
-                    if 'col' in options:
-                        col = int(options["col"])
-                        if col < 1 or col > 13:
-                            print("Col " + str(col) + " out of range")
-                            exit(1)
-                        col = col - 1 # actual col is zero-offset for zappy
-                    if 'max_current' in options:
-                        maxc = options["max_current"].split(':')
-                        if maxc[1].lower() != 'amp' and maxc[1].lower() != 'amps':
-                            print("Units not recognized for max_current")
-                            exit(1)
-                        max_current = float(maxc[0])
-                        if max_current < 0.0:
-                            print("Max current out of range")
-                            exit(1)
-                    if 'energy_cutoff' in options:
-                        ecut = options["energy_cutoff"].split(':')
-                        if ecut[1].lower() != 'joules' and ecut[1].lower() != 'joule':
-                            print("Units not recognized for energy_cutoff")
-                            exit(1)
-                        energy_cutoff_joules = float(ecut[0])
-                        energy_cutoff = int(energy_cutoff_joules * ONEJOULE)
-                        if energy_cutoff > 4294967295:
-                            print("Energy cutoff 32-bit integer overflow")
-                            exit(1)
-                        if self.verbose:
-                            print("Setting cutoff of " + str(energy_cutoff) + " counts")
-
-                if row == -1:
-                    print("Warning: no row specified, defaulting to all rows")
-                    row = 4
-                if col == -1:
-                    print("Warning: no col specified, defaulting to all columns")
-                    col = 12
-
-                if self.dry_run or self.verbose:
-                    print('Parsing successful: voltage '+ str(v) + ' duration ' + str(time) + ' row ' + str(row+1) + ' col ' + str(col+1) + ' max_current ' + str(max_current) + ' energy_cutoff ' + str(energy_cutoff) )
-                    if self.dry_run:
-                        exit(1)
-
-                try:
-                    tn = telnetlib.Telnet(self.target_ip)
-                    zapstr = str('zap ' + str(row) + ' ' + str(col) + ' ' + str(v) + ' ' + str(time * 1000) + ' ' + str(max_current * 1000) + ' ' + str(energy_cutoff) + '\n\r')
-                    if self.verbose:
-                        print('telnet> ' + zapstr)
-                    zapbytes = bytearray(zapstr,'utf-8')
-                    tn.write(bytes(zapbytes))
-
-                    try:
-                        ret = tn.expect(["zerr", "zpass"], timeout=10)
-                        # this requires editing telnetlib.py expect function: dm = list[i].search(self.cookedq.decode('utf-8'))
-                    except EOFError:
-                        print('Zappy.zap failed: no status return')
-                    if ret[0] == -1:
-                        print('Zappy.zap failed: status return timeout')
-
-                    if self.verbose and ret[0] != -1:
-                        print('DEBUG: ' + ret[2].decode('utf-8'))
-
-                    if ret[2].decode('utf-8').find('zpass') != -1:
-                        tn.close()
-                        self.dump_csv(row+1, col+1, v, time)
-                        exit(0)
-                    else:
-                        print('Chassis returned error')
-                        print(ret[2].decode('utf-8'))
-                        tn.close()
-                        exit(1)
-
-                except Exception as e:
-                    print(e)
-                    print('Error sending command to zappy logic module')
-
+                self.zap_inner(command)
 
             elif(command["name"] == 'Zappy.lock'):
                 if self.dry_run:
@@ -281,7 +288,7 @@ class ZappyJSON():
 
                 if self.serialize:
                     now = datetime.now()
-                    out_name = self.prefix + now.strftime("%Y_%b_%d-%H_%M_%S-") + 'r' + str(r) + 'c' + str(c) + '.csv'
+                    out_name = self.prefix + now.strftime("%Y_%b_%d-%H_%M_%S.%f")[:-3] + '-r' + str(r) + 'c' + str(c) + '.csv'
                 else:
                     out_name = self.prefix + 'r' + str(r) + 'c' + str(c) + '.csv'
 
@@ -313,7 +320,7 @@ class ZappyJSON():
                     plt.ylabel('volts V')
                     plt.legend(loc='lower right')
                     if self.serialize:
-                        out_png = self.prefix + now.strftime("%Y_%b_%d-%H_%M_%S-") + 'r' + str(r) + 'c' + str(c) + '.png'
+                        out_png = self.prefix + now.strftime("%Y_%b_%d-%H_%M_%S.%f")[:-3] + '-r' + str(r) + 'c' + str(c) + '.png'
                     else:
                         out_png = self.prefix + 'r' + str(r) + 'c' + str(c) + '.png'
                     plt.savefig(out_png, dpi=300)
@@ -332,11 +339,15 @@ def main():
     parser.add_argument(
         "-t", "--target", help="IP address of zappy logic board", default="10.0.11.2"
     )
-    parser.add_argument(
-        "-f", "--file", help="Filename of JSON command", default="zap.json",
+    filetype = parser.add_mutually_exclusive_group(required=True)
+    filetype.add_argument(
+        "-f", "--file", help="Filename of JSON command"
+    )
+    filetype.add_argument(
+        "-c", "--csv", help="Filename of CSV command file"
     )
     parser.add_argument(
-        "-d", "--dry-run", help="Dry run to check JSON formatting", dest='dry_run', action='store_true'
+        "-d", "--dry-run", help="Dry run to check input formatting", dest='dry_run', action='store_true'
     )
     parser.add_argument(
         "-v", "--verbose", help="Print debugging spew", dest='verbose', action='store_true'
@@ -363,19 +374,47 @@ def main():
         print('IP ' + args.target + ' is not valid')
         exit(1)
 
-    json_file = args.file
+    if args.file:
+        json_file = args.file
 
-    try:
-        f = open(json_file, 'rb')
-    except IOError:
-        print('Error opening file ' + json_file)
-        exit(1)
+        try:
+            f = open(json_file, 'rb')
+        except IOError:
+            print('Error opening file ' + json_file)
+            exit(1)
 
-    with f:
-        json_string = f.read()
-        zappy = ZappyJSON(json_string, target_ip, args.dry_run, args.verbose, args.prefix, args.no_png, args.serialize)
-        zappy.zap()
-        exit(0)
+        with f:
+            json_string = f.read()
+            zappy = ZappyJSON(target_ip, args.dry_run, args.verbose, args.prefix, args.no_png, args.serialize)
+            zappy.zap(json_string)
+            exit(0)
+
+    elif args.csv:
+        csv_file = args.csv
+
+        try:
+            with open(csv_file, newline='') as f:
+                reader = csv.DictReader(f)
+                zappy = ZappyJSON(target_ip, args.dry_run, args.verbose, args.prefix, args.no_png, args.serialize)
+
+                for row in reader:
+                    command = {}
+                    command['voltage'] = str(row['voltage']) + ':volts'
+                    command['duration'] = str(row['duration']) + ':milliseconds'
+                    option={}
+                    option['row'] = str(row['row'])
+                    option['col'] = str(row['col'])
+                    option['max_current'] = str(row['max_current']) + ':amps'
+                    option['energy_cutoff'] = str(row['energy_cutoff']) + ':joules'
+                    command['option'] = option
+                    zappy.zap_inner(command)
+
+                exit(0)
+
+        except IOError:
+            print('Error opening file ' + csv_file)
+            exit(1)
+
 
 if __name__ == "__main__":
     main()
