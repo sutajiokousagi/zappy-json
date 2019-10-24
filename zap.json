@@ -1,10 +1,11 @@
 {
   "name": "Zappy.zap",
   "voltage": "500.0:volts",
-  "duration": "10.0:milliseconds",
+  "duration": "5.0:milliseconds",
   "option": {
-    "row": "2",
-    "col": "7",
-    "max_current": "5.0:amp"
+    "row": "3",
+    "col": "3",
+    "max_current": "16.0:amp",
+    "energy_cutoff": "0.5:joules"
   }
 }
