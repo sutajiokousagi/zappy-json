@@ -3,7 +3,7 @@
 import json
 import argparse
 import socket
-import telnetlib
+import zappytelnetlib
 import matplotlib.pyplot as plt
 from datetime import datetime
 import csv
@@ -101,7 +101,7 @@ class ZappyJSON():
                 return
 
         try:
-            tn = telnetlib.Telnet(self.target_ip)
+            tn = zappytelnetlib.Telnet(self.target_ip)
             zapstr = str('zap ' + str(row) + ' ' + str(col) + ' ' + str(v) + ' ' + str(time * 1000) + ' ' + str(
                 max_current * 1000) + ' ' + str(energy_cutoff) + '\n\r')
             if self.verbose:
@@ -153,7 +153,7 @@ class ZappyJSON():
                     print('Dry run got lock command')
                 else:
                     try:
-                        tn = telnetlib.Telnet(self.target_ip)
+                        tn = zappytelnetlib.Telnet(self.target_ip)
                         zapstr = str('plate lock\n\r')
                         if self.verbose:
                             print('telnet> ' + zapstr)
@@ -188,7 +188,7 @@ class ZappyJSON():
                     print('Dry run got unlock command')
                 else:
                     try:
-                        tn = telnetlib.Telnet(self.target_ip)
+                        tn = zappytelnetlib.Telnet(self.target_ip)
                         zapstr = str('plate unlock\n\r')
                         if self.verbose:
                             print('telnet> ' + zapstr)
