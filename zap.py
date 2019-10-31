@@ -353,7 +353,7 @@ def main():
         "-v", "--verbose", help="Print debugging spew", dest='verbose', action='store_true'
     )
     parser.add_argument(
-        "-p", "--prefix", help="Output file prefix for saving CSV and PNG"
+        "-p", "--prefix", help="Output file prefix for saving CSV and PNG", default="~/zap-logs/run_"
     )
     parser.add_argument(
         "-n", "--no-png", help="Don't save PNG graph when output prefix is specified to speedup data post-processing", dest='no_png', action='store_true'
@@ -364,7 +364,7 @@ def main():
     parser.set_defaults(dry_run=False)
     parser.set_defaults(verbose=False)
     parser.set_defaults(no_png=False)
-    parser.set_defaults(serialize=False)
+    parser.set_defaults(serialize=True)
     args = parser.parse_args()
 
     try:
