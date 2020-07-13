@@ -7,6 +7,7 @@ import zappytelnetlib
 import matplotlib.pyplot as plt
 from datetime import datetime
 import csv
+from pathlib import Path
 
 #test_parsed = json.loads(test)
 #test_voltage = test_parsed["voltage"].split(':')
@@ -294,7 +295,7 @@ class ZappyJSON():
 
                 slowg = []
                 fastg = []
-                with open(out_name, "w") as outf:
+                with open(out_name, 'w+') as outf:
                     print("warning: using hard-coded calibration parameters from zappy-01", file=outf)
                     print("measured energy, " + str(energycode) + ", counts, " + str(energycode * ENERGY_COEFF) + ", joules", file=outf)
                     print("row, " + str(r) + ", col, " + str(c) + ", target V, " + str(v), file=outf)
@@ -353,7 +354,7 @@ def main():
         "-v", "--verbose", help="Print debugging spew", dest='verbose', action='store_true'
     )
     parser.add_argument(
-        "-p", "--prefix", help="Output file prefix for saving CSV and PNG", default="~/zap-logs/run_"
+        "-p", "--prefix", help="Output file prefix for saving CSV and PNG", default=str(Path.home()) + "/zap-logs/run_"
     )
     parser.add_argument(
         "-n", "--no-png", help="Don't save PNG graph when output prefix is specified to speedup data post-processing", dest='no_png', action='store_true'
